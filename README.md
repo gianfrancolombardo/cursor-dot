@@ -1,39 +1,54 @@
 # Cursor Dot
 
-Always-on-top overlay for Windows: **one dot per chat conversation**.
+Always-on-top Windows overlay that shows **one glowing dot per Cursor chat**.
 
-- Amber pulse = that chat is **working**
-- Green = that chat is **done** (brief soft halo when it just finished)
-- Dots sorted by last update (newest first), max **8**, only if updated in the last **5h**
-- New conversation → new dot; closed / aged-out session → dot removed
+| Color | Meaning |
+| --- | --- |
+| Amber (pulse) | Chat is generating |
+| Green | Chat finished |
+| Soft halo | Just finished (a few seconds) |
 
-## How it works
+Dots are ordered by last activity (newest first). Up to **8** visible, only for chats updated in the last **5 hours**. New conversation → new dot. Closed or aged-out session → dot disappears.
 
-1. Cursor **hooks** fire on prompt submit / stop / session end.
-2. A tiny relay POSTs the event to `http://127.0.0.1:17373` (milliseconds, no polling).
-3. The Electron overlay updates instantly.
+## Requirements
 
-```
-Cursor hooks  --POST-->  Electron (localhost)  -->  glass overlay
-```
+- Windows
+- [Node.js](https://nodejs.org/) 18+
+- [Cursor](https://cursor.com/) with hooks enabled
 
-## Setup
+## Install
 
 ```bash
+git clone https://github.com/gianfrancolombardo/cursor-dot.git
+cd cursor-dot
 npm install
 npm run install-hooks
 npm start
 ```
 
-Then restart Cursor once (or check **Customize → Hooks** that the relay is listed).
+Restart Cursor once so the hooks load (or check **Customize → Hooks** and confirm the relay is listed).
 
 ## Usage
 
-- Keep `npm start` running while you work.
-- Each circle is one chat session.
-- Click a circle to focus that chat's Cursor project window (or **Cursor Agents** if it's an Agent Window session).
-- Tray icon: show/hide, clear finished, appearance (**Minimalista** / **Glass**), quit.
-- Drag the pill (grip at the top) to move the window.
+Keep `npm start` running while you work.
+
+- Each circle = one chat conversation (not a UI tab index)
+- Hover a dot → tooltip with project, age, and prompt preview
+- Click a dot → focus that chat’s Cursor window (or **Cursor Agents** for Agent Window sessions)
+- Drag the grip at the top of the pill to move the overlay
+- Tray icon → show/hide, clear finished, theme (**Minimalista** / **Glass**), quit
+
+## How it works
+
+```
+Cursor hooks  ──POST──►  Electron (127.0.0.1:17373)  ──►  overlay
+                 │
+                 └── also appends to ~/.cursor/cursor-dot/events.jsonl
+```
+
+1. Hooks fire on `beforeSubmitPrompt`, `stop`, and `sessionEnd`
+2. A small relay posts the event to localhost (fail-open: if the overlay is down, agents are never blocked)
+3. The Electron app updates the dots instantly
 
 ## Uninstall hooks
 
@@ -41,8 +56,12 @@ Then restart Cursor once (or check **Customize → Hooks** that the relay is lis
 npm run uninstall-hooks
 ```
 
-## Notes
+## Config
 
-- Status is per **conversation**, not per visual chat tab index.
-- If the overlay is closed, hooks fail open (agents are never blocked).
-- Port override: `CURSOR_DOT_PORT=17373`
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CURSOR_DOT_PORT` | `17373` | Local HTTP port for the overlay |
+
+## License
+
+MIT
