@@ -1,0 +1,16 @@
+{
+  "name": "cursor-dot",
+  "version": "1.0.0",
+  "description": "Always-on-top overlay: one glowing dot per Cursor chat — amber while working, green when done.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "install-hooks": "node scripts/install-hooks.js",
+    "uninstall-hooks": "node scripts/uninstall-hooks.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^37.2.0"
+  }
+}
