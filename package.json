@@ -1,16 +1,95 @@
 {
   "name": "cursor-dot",
-  "version": "1.0.0",
+  "productName": "Cursor Dot",
+  "version": "1.0.1",
   "description": "Always-on-top overlay: one glowing dot per Cursor chat — amber while working, green when done.",
   "main": "electron/main.js",
+  "author": "Cursor Dot",
+  "license": "MIT",
+  "homepage": "https://github.com/gianfrancolombardo/cursor-dot",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gianfrancolombardo/cursor-dot.git"
+  },
   "scripts": {
     "start": "electron .",
+    "test:drag": "electron scripts/smoke-drag.js",
     "install-hooks": "node scripts/install-hooks.js",
-    "uninstall-hooks": "node scripts/uninstall-hooks.js"
+    "uninstall-hooks": "node scripts/uninstall-hooks.js",
+    "reinstall-hooks": "npm run uninstall-hooks && npm run install-hooks",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable",
+    "dist:all": "electron-builder --win nsis portable",
+    "win:reinstall": "scripts\\win-reinstall.cmd"
   },
-  "author": "",
-  "license": "MIT",
+  "build": {
+    "appId": "com.cursordot.app",
+    "productName": "Cursor Dot",
+    "copyright": "Copyright © Cursor Dot",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "hooks/**/*",
+      "scripts/hooks-manager.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "hooks",
+        "to": "hooks",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "electron/focus-cursor-worker.ps1",
+        "to": "focus-cursor-worker.ps1"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "executableName": "Cursor Dot",
+      "legalTrademarks": "Cursor Dot"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cursor Dot",
+      "uninstallDisplayName": "Cursor Dot",
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
+      "differentialPackage": true,
+      "displayLanguageSelector": false,
+      "installerLanguages": [
+        "en_US",
+        "es_ES"
+      ],
+      "language": "1033",
+      "warningsAsErrors": false
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
+    }
+  },
   "devDependencies": {
-    "electron": "^37.2.0"
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
   }
 }

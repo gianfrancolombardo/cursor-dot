@@ -299,18 +299,24 @@ function render(state) {
   if (reordered) animateReorder(root, fromTops);
 }
 
+/**
+ * Click-through for transparent chrome; the grip uses native -webkit-app-region
+ * drag (avoids DPI setPosition drift). Main blocks ignore-on during will-move.
+ */
+function setupPointerPolicy(signal) {
+  signal.addEventListener("mouseenter", () => {
+    window.cursorDot.setMouseIgnore(false);
+  });
+  signal.addEventListener("mouseleave", () => {
+    window.cursorDot.setMouseIgnore(true);
+  });
+}
+
 async function boot() {
   const signal = document.getElementById("signal");
   // Transparent chrome is click-through; only the pill captures the mouse.
   window.cursorDot.setMouseIgnore(true);
-  if (signal) {
-    signal.addEventListener("mouseenter", () => {
-      window.cursorDot.setMouseIgnore(false);
-    });
-    signal.addEventListener("mouseleave", () => {
-      window.cursorDot.setMouseIgnore(true);
-    });
-  }
+  if (signal) setupPointerPolicy(signal);
 
   window.cursorDot.onState(render);
   const initial = await window.cursorDot.getState();

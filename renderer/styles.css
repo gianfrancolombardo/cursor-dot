@@ -66,7 +66,8 @@ body {
   border: 1px solid var(--housing-border);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  -webkit-app-region: drag;
+  /* Hit-testing stays on the pill; only .grip is an OS drag region. */
+  -webkit-app-region: no-drag;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
   transform-origin: center right;
 }
@@ -93,6 +94,7 @@ html[data-theme="glass"] .signal {
   height: 12px;
   margin-bottom: 7px;
   border-radius: 7px;
+  /* Native OS drag — stable on fractional DPI (unlike setPosition polling). */
   -webkit-app-region: drag;
   cursor: grab;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0.18));

@@ -12,11 +12,88 @@ Dots are ordered by last activity (newest first). Up to **8** visible, only for 
 
 ## Requirements
 
-- Windows
-- [Node.js](https://nodejs.org/) 18+
+- Windows 10/11 (x64)
 - [Cursor](https://cursor.com/) with hooks enabled
+- For **development** only: [Node.js](https://nodejs.org/) 18+
 
-## Install
+The packaged installer does **not** require Node.js. Hooks run with Electron-as-Node.
+
+## Install (Windows installer)
+
+1. Build the installer (from a machine with Node.js):
+
+```bat
+npm install
+npm run dist
+```
+
+2. Run the generated setup from `dist\`:
+
+`Cursor Dot-Setup-<version>-x64.exe`
+
+3. Finish the wizard (choose install folder if you want).
+4. Restart Cursor once so hooks reload (or check **Customize → Hooks**).
+5. Launch **Cursor Dot** from the Start Menu / Desktop shortcut.
+
+The installer also registers Cursor hooks automatically. On every app launch, hooks are re-synced if the app version or install path changed.
+
+### Portable build (optional)
+
+```bat
+npm run dist:portable
+```
+
+Run `Cursor Dot-Portable-<version>-x64.exe`. First launch installs/syncs hooks.
+
+## Upgrade / reinstall after changes
+
+Bump `version` in `package.json` (for example `1.0.0` → `1.0.1`), then:
+
+```bat
+npm run win:reinstall
+```
+
+Or manually:
+
+```bat
+npm install
+npm run dist
+```
+
+Install the new setup over the previous one. Windows Add/Remove Programs keeps a single entry; NSIS replaces the previous version. Hooks are rewritten to the new exe path/version.
+
+Quick hook-only refresh while developing:
+
+```bat
+npm run reinstall-hooks
+npm start
+```
+
+## Uninstall
+
+**Recommended:** Windows **Settings → Apps → Installed apps → Cursor Dot → Uninstall**.
+
+That removes:
+
+- The app from Program Files / local install dir
+- Start Menu / Desktop shortcuts
+- Cursor hooks registered by Cursor Dot
+
+App settings under `%APPDATA%\Cursor Dot` are kept by default so a reinstall restores theme/session prefs. Delete that folder manually if you want a clean slate.
+
+**Hooks only** (keep the app):
+
+```bat
+npm run uninstall-hooks
+```
+
+Or, if installed:
+
+```bat
+"%LOCALAPPDATA%\Programs\Cursor Dot\Cursor Dot.exe" --uninstall-hooks
+```
+
+## Development install
 
 ```bash
 git clone https://github.com/gianfrancolombardo/cursor-dot.git
@@ -30,7 +107,7 @@ Restart Cursor once so the hooks load (or check **Customize → Hooks** and conf
 
 ## Usage
 
-Keep `npm start` running while you work.
+Keep the overlay running while you work (`npm start` or the installed app).
 
 - Each circle = one chat conversation (not a UI tab index)
 - Hover a dot → tooltip with project, age, and prompt preview
@@ -50,17 +127,20 @@ Cursor hooks  ──POST──►  Electron (127.0.0.1:17373)  ──►  overla
 2. A small relay posts the event to localhost (fail-open: if the overlay is down, agents are never blocked)
 3. The Electron app updates the dots instantly
 
-## Uninstall hooks
-
-```bash
-npm run uninstall-hooks
-```
-
 ## Config
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `CURSOR_DOT_PORT` | `17373` | Local HTTP port for the overlay |
+
+## Versioning
+
+| File / command | Role |
+| --- | --- |
+| `package.json` → `version` | Source of truth for installer + hook metadata |
+| `~/.cursor/cursor-dot/install-meta.json` | Records installed hook version and runner path |
+| `npm run dist` | Builds `Cursor Dot-Setup-<version>-x64.exe` |
+| App launch / installer | Reinstalls hooks when version or path changes |
 
 ## License
 

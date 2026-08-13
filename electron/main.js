@@ -12,6 +12,49 @@ const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
 
+// Packaged / GUI launches often have no console. Logging then hits EPIPE and
+// Electron shows an uncaught-exception dialog even when the action succeeded.
+function isBrokenPipe(err) {
+  return Boolean(err && (err.code === "EPIPE" || err.code === "EIO"));
+}
+
+function ignoreBrokenPipe(stream) {
+  if (!stream || typeof stream.on !== "function") return;
+  stream.on("error", (err) => {
+    if (isBrokenPipe(err)) return;
+  });
+}
+ignoreBrokenPipe(process.stdout);
+ignoreBrokenPipe(process.stderr);
+
+function safeLog(...args) {
+  try {
+    console.log(...args);
+  } catch (err) {
+    if (!isBrokenPipe(err)) throw err;
+  }
+}
+
+function safeError(...args) {
+  try {
+    console.error(...args);
+  } catch (err) {
+    if (!isBrokenPipe(err)) throw err;
+  }
+}
+
+function parseHookCli() {
+  if (process.argv.includes("--uninstall-hooks")) return "uninstall";
+  if (process.argv.includes("--install-hooks")) return "install";
+  return null;
+}
+
+function loadHooksManager() {
+  return require(path.join(__dirname, "..", "scripts", "hooks-manager"));
+}
+
+const HOOK_CLI = parseHookCli();
+
 const PORT = Number(process.env.CURSOR_DOT_PORT || 17373);
 const STATE_PATH = path.join(app.getPath("userData"), "sessions.json");
 const SETTINGS_PATH = path.join(app.getPath("userData"), "settings.json");
@@ -37,6 +80,24 @@ let server = null;
 
 /** @type {Map<string, object>} */
 const sessions = new Map();
+
+/** True while the OS is moving the frameless window (native app-region drag). */
+let windowMoving = false;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let moveIdleTimer = null;
+
+function markWindowMoving() {
+  windowMoving = true;
+  if (moveIdleTimer != null) clearTimeout(moveIdleTimer);
+  // will-move repeats during drag; settle shortly after the last event.
+  moveIdleTimer = setTimeout(() => {
+    windowMoving = false;
+    moveIdleTimer = null;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    // Restore click-through; next hover on the pill re-enables hit-testing.
+    mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  }, 200);
+}
 
 function loadPersisted() {
   try {
@@ -144,6 +205,8 @@ function snapshot() {
 
 function fitWindow(sessionCount) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Avoid fighting the OS drag / live move on scaled displays.
+  if (windowMoving) return;
 
   const n = Math.max(0, Number(sessionCount) || 0);
   // Left gutter for hover tip; keep narrow so less dead transparent area.
@@ -296,6 +359,8 @@ function createWindow() {
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   // Pass clicks through transparent chrome; pill re-enables hit-testing on hover.
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  // Native OS drag (app-region) emits will-move; keep hit-testing until it settles.
+  mainWindow.on("will-move", markWindowMoving);
   mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 
   mainWindow.on("closed", () => {
@@ -512,10 +577,23 @@ function stopFocusWorker() {
   focusStdoutBuf = "";
 }
 
+function resolveFocusWorkerScript() {
+  // PowerShell cannot execute a .ps1 packed inside app.asar.
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "focus-cursor-worker.ps1");
+  }
+  return path.join(__dirname, "focus-cursor-worker.ps1");
+}
+
 function ensureFocusWorker() {
   if (focusWorker && !focusWorker.killed) return focusWorker;
 
-  const scriptPath = path.join(__dirname, "focus-cursor-worker.ps1");
+  const scriptPath = resolveFocusWorkerScript();
+  if (!fs.existsSync(scriptPath)) {
+    safeError("[cursor-dot] focus worker missing:", scriptPath);
+    return null;
+  }
+
   focusStdoutBuf = "";
   focusWorker = spawn(
     "powershell.exe",
@@ -541,7 +619,7 @@ function ensureFocusWorker() {
       const line = focusStdoutBuf.slice(0, idx).replace(/\r$/, "");
       focusStdoutBuf = focusStdoutBuf.slice(idx + 1);
       if (!line || line === "ready") continue;
-      console.log("[cursor-dot] focus Cursor:", line);
+      safeLog("[cursor-dot] focus Cursor:", line);
       settleFocusWaiter({
         ok: line.startsWith("ok"),
         detail: line,
@@ -551,7 +629,7 @@ function ensureFocusWorker() {
 
   focusWorker.stderr.setEncoding("utf8");
   focusWorker.stderr.on("data", (chunk) => {
-    console.error("[cursor-dot] focus worker:", String(chunk).trim());
+    safeError("[cursor-dot] focus worker:", String(chunk).trim());
   });
 
   focusWorker.on("exit", () => {
@@ -573,6 +651,9 @@ function focusCursorWindow(projectLabel) {
   const project = String(projectLabel || "").trim() || "__agents__";
 
   const worker = ensureFocusWorker();
+  if (!worker) {
+    return Promise.resolve({ ok: false, reason: "worker_missing" });
+  }
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       const i = focusWaiters.findIndex((w) => w.resolve === resolve);
@@ -593,14 +674,14 @@ ipcMain.handle("get-state", () => snapshot());
 ipcMain.handle("focus-cursor", (_event, projectLabel) =>
   focusCursorWindow(projectLabel)
 );
-ipcMain.on("window-drag", () => {
-  // reserved; HTML5 -webkit-app-region handles drag
-});
+
 ipcMain.on("hide-window", () => {
   if (mainWindow) mainWindow.hide();
 });
 ipcMain.on("set-mouse-ignore", (_event, ignore) => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // mouseleave fires at drag start — do not punch through mid-drag.
+  if (ignore && windowMoving) return;
   if (ignore) mainWindow.setIgnoreMouseEvents(true, { forward: true });
   else mainWindow.setIgnoreMouseEvents(false);
 });
@@ -612,11 +693,30 @@ ipcMain.on("clear-finished", () => {
 });
 ipcMain.on("quit-app", () => app.quit());
 
-app.whenReady().then(() => {
+function syncPackagedHooks() {
+  if (!app.isPackaged) return;
+  try {
+    const hooks = loadHooksManager();
+    const result = hooks.ensureHooks({
+      version: app.getVersion(),
+      runnerExe: process.execPath,
+    });
+    if (result.installed) {
+      console.log(
+        `[cursor-dot] hooks ${result.reason}: v${result.version}`
+      );
+    }
+  } catch (err) {
+    console.error("[cursor-dot] hook sync failed:", err.message);
+  }
+}
+
+function startOverlay() {
   if (process.platform === "win32") {
-    app.setAppUserModelId("com.cursor.dash");
+    app.setAppUserModelId("com.cursordot.app");
     ensureFocusWorker();
   }
+  syncPackagedHooks();
   loadSettings();
   loadPersisted();
   pruneExpired();
@@ -628,14 +728,53 @@ app.whenReady().then(() => {
   setInterval(() => {
     if (pruneExpired()) broadcast();
   }, 30_000);
-});
+}
 
-app.on("window-all-closed", (e) => {
-  e.preventDefault();
-});
+if (HOOK_CLI) {
+  app.whenReady().then(() => {
+    try {
+      const hooks = loadHooksManager();
+      if (HOOK_CLI === "install") {
+        const result = hooks.installHooks({
+          version: app.getVersion(),
+          runnerExe: process.execPath,
+        });
+        console.log(
+          `[cursor-dot] hooks installed v${result.version} -> ${result.command}`
+        );
+      } else {
+        hooks.uninstallHooks();
+        console.log("[cursor-dot] hooks uninstalled");
+      }
+      app.exit(0);
+    } catch (err) {
+      console.error(`[cursor-dot] hook ${HOOK_CLI} failed:`, err.message);
+      app.exit(1);
+    }
+  });
+} else {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+  } else {
+    app.on("second-instance", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
 
-app.on("before-quit", () => {
-  stopFocusWorker();
-  persist();
-  if (server) server.close();
-});
+    app.whenReady().then(startOverlay);
+
+    app.on("window-all-closed", (e) => {
+      e.preventDefault();
+    });
+
+    app.on("before-quit", () => {
+      if (moveIdleTimer != null) clearTimeout(moveIdleTimer);
+      stopFocusWorker();
+      persist();
+      if (server) server.close();
+    });
+  }
+}
